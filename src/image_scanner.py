@@ -25,6 +25,11 @@ class ImageScanner:
         'image/bmp', 'image/webp', 'image/x-icon', 'image/vnd.microsoft.icon'
     }
     
+    # Directories to skip during scanning
+    SKIP_DIRECTORIES = {
+        '@eaDir',  # Synology NAS system directory
+    }
+    
     def __init__(self, max_workers: int = 4):
         """
         Initialize the image scanner.
@@ -37,6 +42,26 @@ class ImageScanner:
         
         # Initialize mimetypes
         mimetypes.init()
+    
+    def _should_skip_directory(self, directory: Path) -> bool:
+        """
+        Check if a directory should be skipped during scanning.
+        
+        Args:
+            directory: Directory to check
+            
+        Returns:
+            True if the directory should be skipped
+        """
+        directory_name = directory.name
+        
+        # Check against known directories to skip (case-insensitive)
+        for skip_dir in self.SKIP_DIRECTORIES:
+            if directory_name.lower() == skip_dir.lower():
+                self.logger.debug(f"Skipping directory: {directory}")
+                return True
+        
+        return False
     
     def _is_image_file(self, file_path: Path) -> bool:
         """
@@ -84,6 +109,9 @@ class ImageScanner:
                         if self._is_image_file(item):
                             image_files.append(item.resolve())
                     elif item.is_dir() and not item.is_symlink():
+                        # Skip directories that should be ignored
+                        if self._should_skip_directory(item):
+                            continue
                         # Recursively scan subdirectories
                         subdirectory_images = self._scan_directory_worker(item)
                         image_files.extend(subdirectory_images)
@@ -126,7 +154,11 @@ class ImageScanner:
             try:
                 for item in current_dir.iterdir():
                     if item.is_dir() and not item.is_symlink():
-                        directories_to_scan.append(item)
+                        # Skip directories that should be ignored
+                        if not self._should_skip_directory(item):
+                            directories_to_scan.append(item)
+                        else:
+                            self.logger.debug(f"Skipping directory during discovery: {item}")
             except (PermissionError, OSError) as e:
                 self.logger.warning(f"Cannot list directory {current_dir}: {e}")
         
