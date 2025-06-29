@@ -18,11 +18,13 @@ ImageHash>=4.3.1
 # - logging (application logging)
 # - pathlib (path handling)
 # - sqlite3 (database operations)
-# - hashlib (file hashing)
-# - datetime (timestamp handling)
-# - json (JSON report generation)
-# - csv (CSV report generation)
 # - concurrent.futures (parallel processing)
-# - mimetypes (file type detection)
-# - os (file system operations)
-# - sys (system interaction)
+# - hashlib (file hashing)
+# - mimetypes (MIME type detection)
+# - os (operating system interface)
+# - tempfile (temporary files)
+# - datetime (date/time handling)
+
+# Development and testing dependencies (optional)
+# pytest>=8.0.0
+# pytest-cov>=6.0.0

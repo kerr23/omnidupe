@@ -1,0 +1,18 @@
+# Development dependencies for OmniDupe
+# Install with: pip install -r requirements-dev.txt
+
+# Include main requirements
+-r requirements.txt
+
+# Testing framework
+pytest>=8.0.0
+pytest-cov>=6.0.0
+
+# Code quality tools (optional)
+# black>=23.0.0
+# flake8>=6.0.0
+# mypy>=1.0.0
+
+# Documentation (optional)
+# sphinx>=7.0.0
+# sphinx-rtd-theme>=1.0.0

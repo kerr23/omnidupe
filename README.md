@@ -322,16 +322,57 @@ omnidupe/
 │   ├── database.py         # SQLite database operations
 │   ├── reporter.py         # Report generation (text, CSV, JSON)
 │   └── file_manager.py     # Safe file removal operations
+├── tests/                  # Comprehensive test suite
+│   ├── conftest.py         # Test fixtures and configuration
+│   ├── test_database.py    # Database operations tests
+│   ├── test_file_manager.py # File management tests
+│   ├── test_image_scanner.py # Image scanning tests
+│   ├── test_duplicate_detector.py # Duplicate detection tests
+│   ├── test_main.py        # Main application tests
+│   └── test_integration.py # End-to-end integration tests
 ├── requirements.txt        # Python dependencies
+├── requirements-dev.txt    # Development dependencies
+├── pytest.ini            # Test configuration
+├── run_tests.py           # Test runner script
+├── TESTING.md             # Test documentation
 ├── Dockerfile             # Container configuration
 └── README.md              # This file
 ```
 
 ### Running Tests
 
+OmniDupe includes a comprehensive test suite with 97 tests covering all functionality:
+
 ```bash
-# Run with test images
-python main.py --input-dir ./test_images --output-dir ./test_output --verbose --dry-run
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Run all tests
+python run_tests.py
+
+# Run fast tests only
+python run_tests.py fast
+
+# Run with coverage report
+python run_tests.py --coverage
+
+# Run specific test categories
+python run_tests.py unit
+python run_tests.py integration
+
+# Direct pytest usage
+pytest                      # Run all tests
+pytest tests/test_database.py  # Run specific test file
+pytest -m "not slow"       # Skip slow tests
+```
+
+See [TESTING.md](TESTING.md) for detailed test documentation.
+
+### Manual Testing
+
+```bash
+# Test with sample images
+python main.py detect --input-dir ./images --output-dir ./test_output --verbose --dry-run
 ```
 
 ### Contributing
