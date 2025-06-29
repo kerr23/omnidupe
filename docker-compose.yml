@@ -1,0 +1,42 @@
+# Docker Compose configuration for OmniDupe
+version: '3.8'
+
+services:
+  omnidupe:
+    build: .
+    container_name: omnidupe
+    volumes:
+      # Mount your image directory (read-only for safety)
+      - /path/to/your/images:/images:ro
+      # Mount output directory for reports and database
+      - ./output:/data
+    environment:
+      - INPUT_DIR=/images
+      - OUTPUT_DIR=/data
+    command: [
+      "--input-dir", "/images",
+      "--output-dir", "/data",
+      "--verbose",
+      "--report-format", "json"
+    ]
+    # Remove 'restart: unless-stopped' since this is a one-time operation
+    
+  # Optional: Run in dry-run mode first
+  omnidupe-dryrun:
+    build: .
+    container_name: omnidupe-dryrun
+    volumes:
+      - /path/to/your/images:/images:ro
+      - ./output:/data
+    environment:
+      - INPUT_DIR=/images
+      - OUTPUT_DIR=/data
+    command: [
+      "--input-dir", "/images",
+      "--output-dir", "/data",
+      "--dry-run",
+      "--verbose",
+      "--report-format", "text"
+    ]
+    profiles:
+      - dryrun

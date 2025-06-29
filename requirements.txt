@@ -1,0 +1,28 @@
+# OmniDupe - Duplicate Image Finder
+# Python Dependencies
+
+# Core image processing
+Pillow>=10.0.0
+
+# Image metadata extraction
+ExifRead>=3.0.0
+
+# Perceptual hashing
+ImageHash>=4.3.1
+
+# Database (included in Python standard library)
+# sqlite3
+
+# Standard library dependencies used:
+# - argparse (command line parsing)
+# - logging (application logging)
+# - pathlib (path handling)
+# - sqlite3 (database operations)
+# - hashlib (file hashing)
+# - datetime (timestamp handling)
+# - json (JSON report generation)
+# - csv (CSV report generation)
+# - concurrent.futures (parallel processing)
+# - mimetypes (file type detection)
+# - os (file system operations)
+# - sys (system interaction)
