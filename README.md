@@ -9,6 +9,11 @@ A Python application that recursively searches directories for duplicate and vis
   - Secondary: File content hash matching (SHA-256)
   - Tertiary: Perceptual similarity using multiple hash algorithms (pHash, aHash, dHash, wHash)
 
+- **Mode-based Operation**:
+  - **Detect mode**: Scans for duplicates, stores results in persistent database, marks files for removal
+  - **Remove mode**: Reads database and removes images marked for deletion
+  - **Protect mode**: Marks specific images as protected from deletion
+
 - **Intelligent File Selection**: Automatically chooses which file to keep based on:
   - Highest resolution (width × height)
   - Largest file size (if resolution is identical)
@@ -22,12 +27,14 @@ A Python application that recursively searches directories for duplicate and vis
 - **Safe Operation**:
   - Dry-run mode for testing without file deletion
   - User confirmation required for file removal
-  - Backup script generation for manual review
+  - Image protection system to prevent accidental deletion
+  - Persistent database tracks all operations
 
 - **Performance Optimized**:
   - Parallel processing for I/O-bound operations
   - SQLite database for efficient metadata storage and querying
   - Configurable worker thread limits
+  - Skips system directories (@eaDir for Synology NAS)
 
 - **Docker Support**: Fully containerized with volume mounting for safe operation
 
@@ -55,88 +62,119 @@ docker build -t omnidupe .
 
 ## Usage
 
-### Local Usage
+OmniDupe operates in three distinct modes:
 
-Basic usage:
+### Mode 1: Detect Duplicates
+
+Scan for duplicates and store results in the database:
+
 ```bash
-python main.py --input-dir /path/to/images --output-dir /path/to/results
+python main.py detect --input-dir /path/to/images --output-dir /path/to/results
 ```
 
-Advanced usage:
+Advanced detection with custom settings:
 ```bash
-python main.py \
+python main.py detect \
   --input-dir /path/to/images \
   --output-dir /path/to/results \
-  --remove-duplicates \
-  --dry-run \
   --similarity-threshold 5 \
-  --report-format json \
-  --persistent-db \
+  --report-format csv \
+  --max-workers 8 \
   --verbose
+```
+
+### Mode 2: Remove Duplicates
+
+Remove images that were marked for deletion during detection:
+
+```bash
+python main.py remove --output-dir /path/to/results
+```
+
+With dry-run to see what would be deleted:
+```bash
+python main.py remove --output-dir /path/to/results --dry-run --verbose
+```
+
+### Mode 3: Protect Images
+
+Mark specific images as protected from deletion:
+
+```bash
+python main.py protect --output-dir /path/to/results --file-path /path/to/image.jpg
+```
+
+### Complete Workflow Example
+
+```bash
+# Step 1: Detect duplicates and create database
+python main.py detect -i /photos -o /results --verbose
+
+# Step 2: Protect important images (optional)
+python main.py protect -o /results --file-path /photos/family/wedding.jpg
+python main.py protect -o /results --file-path /photos/vacation/sunset.jpg
+
+# Step 3: Preview what will be deleted
+python main.py remove -o /results --dry-run
+
+# Step 4: Actually remove the duplicates
+python main.py remove -o /results
 ```
 
 ### Docker Usage
 
-Basic scan (read-only):
+Detection mode:
 ```bash
 docker run --rm \
   -v /path/to/images:/images:ro \
   -v /path/to/output:/data \
   omnidupe \
-  --input-dir /images \
-  --output-dir /data \
-  --persistent-db
+  detect --input-dir /images --output-dir /data --verbose
 ```
 
-Scan with duplicate removal:
+Removal mode:
 ```bash
 docker run --rm \
   -v /path/to/images:/images \
   -v /path/to/output:/data \
   omnidupe \
-  --input-dir /images \
-  --output-dir /data \
-  --remove-duplicates \
-  --dry-run \
-  --persistent-db
+  remove --output-dir /data --dry-run
 ```
 
-For large image collections (recommended):
+Protect mode:
 ```bash
 docker run --rm \
-  -v /path/to/images:/images:ro \
+  -v /path/to/images:/images \
   -v /path/to/output:/data \
   omnidupe \
-  --input-dir /images \
-  --output-dir /data \
-  --persistent-db \
-  --verbose
-```
-
-Using environment variables:
-```bash
-docker run --rm \
-  -e INPUT_DIR=/images \
-  -e OUTPUT_DIR=/data \
-  -v /path/to/images:/images:ro \
-  -v /path/to/output:/data \
-  omnidupe \
-  --verbose
+  protect --output-dir /data --file-path /images/important.jpg
 ```
 
 ## Command Line Options
 
+### Detect Mode
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--input-dir`, `-i` | Directory to scan for images | `$INPUT_DIR` |
-| `--output-dir`, `-o` | Directory to store reports and database | `./output` or `$OUTPUT_DIR` |
-| `--remove-duplicates` | Remove duplicate files after generating report | `False` |
-| `--dry-run` | Show what would be deleted without actually deleting | `False` |
-| `--similarity-threshold` | Hamming distance threshold for perceptual similarity | `10` |
+| `--input-dir`, `-i` | Directory to scan for images | Required |
+| `--output-dir`, `-o` | Directory to store reports and database | `./output` |
+| `--similarity-threshold` | Hamming distance threshold for perceptual similarity | `5` |
 | `--report-format` | Output report format (`text`, `csv`, `json`) | `text` |
-| `--persistent-db` | Keep database file for future runs (⚡ **RECOMMENDED** for large collections) | `False` |
-| `--verbose`, `-v` | Enable verbose logging | `False` |
 | `--max-workers` | Maximum number of worker threads | `4` |
+| `--verbose`, `-v` | Enable verbose logging | `False` |
+
+### Remove Mode
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--output-dir`, `-o` | Directory containing the database | `./output` |
+| `--dry-run` | Show what would be deleted without actually deleting | `False` |
+| `--verbose`, `-v` | Enable verbose logging | `False` |
+
+### Protect Mode
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--output-dir`, `-o` | Directory containing the database | `./output` |
+| `--file-path` | Path to image file to protect | Required |
+| `--verbose`, `-v` | Enable verbose logging | `False` |
 
 ## Supported Image Formats
 

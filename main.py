@@ -38,69 +38,99 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --input-dir /path/to/images --output-dir /path/to/results
-  %(prog)s -i /photos -o /results --remove-duplicates --dry-run
-  %(prog)s -i /photos -o /results --similarity-threshold 5 --verbose
+  # Detect duplicates and store in database
+  %(prog)s detect --input-dir /path/to/images --output-dir /path/to/results
+  
+  # Remove images marked for deletion in database
+  %(prog)s remove --output-dir /path/to/results
+  
+  # Protect an image from deletion
+  %(prog)s protect --output-dir /path/to/results --file-path /path/to/image.jpg
+  
+  # Advanced detection with custom threshold
+  %(prog)s detect -i /photos -o /results --similarity-threshold 25 --verbose
         """
     )
     
-    parser.add_argument(
+    # Add subcommands
+    subparsers = parser.add_subparsers(dest='mode', help='Operation mode', required=True)
+    
+    # Detect mode
+    detect_parser = subparsers.add_parser('detect', help='Detect duplicates and store results')
+    detect_parser.add_argument(
         '--input-dir', '-i',
         type=str,
         default=os.environ.get('INPUT_DIR'),
-        help='Directory to scan for images (can also use INPUT_DIR env var)'
+        required=True,
+        help='Directory to scan for images'
     )
-    
-    parser.add_argument(
+    detect_parser.add_argument(
         '--output-dir', '-o',
         type=str,
         default=os.environ.get('OUTPUT_DIR', './output'),
-        help='Directory to store reports and database (default: ./output, can also use OUTPUT_DIR env var)'
+        help='Directory to store reports and database (default: ./output)'
     )
-    
-    parser.add_argument(
-        '--remove-duplicates',
-        action='store_true',
-        help='Remove duplicate files after generating report (requires confirmation)'
-    )
-    
-    parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be deleted without actually deleting files'
-    )
-    
-    parser.add_argument(
+    detect_parser.add_argument(
         '--similarity-threshold',
         type=int,
-        default=10,
-        help='Hamming distance threshold for perceptual similarity (default: 10)'
+        default=5,
+        help='Hamming distance threshold for perceptual similarity (default: 5)'
     )
-    
-    parser.add_argument(
+    detect_parser.add_argument(
         '--report-format',
         choices=['text', 'csv', 'json'],
         default='text',
         help='Output report format (default: text)'
     )
-    
-    parser.add_argument(
-        '--persistent-db',
-        action='store_true',
-        help='Keep database file for future runs'
+    detect_parser.add_argument(
+        '--max-workers',
+        type=int,
+        default=4,
+        help='Maximum number of worker threads (default: 4)'
     )
-    
-    parser.add_argument(
+    detect_parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Enable verbose logging'
     )
     
-    parser.add_argument(
-        '--max-workers',
-        type=int,
-        default=4,
-        help='Maximum number of worker threads for parallel processing (default: 4)'
+    # Remove mode  
+    remove_parser = subparsers.add_parser('remove', help='Remove images marked for deletion')
+    remove_parser.add_argument(
+        '--output-dir', '-o',
+        type=str,
+        default=os.environ.get('OUTPUT_DIR', './output'),
+        help='Directory containing the database (default: ./output)'
+    )
+    remove_parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Show what would be deleted without actually deleting files'
+    )
+    remove_parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose logging'
+    )
+    
+    # Protect mode
+    protect_parser = subparsers.add_parser('protect', help='Mark an image as protected from deletion')
+    protect_parser.add_argument(
+        '--output-dir', '-o',
+        type=str,
+        default=os.environ.get('OUTPUT_DIR', './output'),
+        help='Directory containing the database (default: ./output)'
+    )
+    protect_parser.add_argument(
+        '--file-path',
+        type=str,
+        required=True,
+        help='Path to image file to protect'
+    )
+    protect_parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose logging'
     )
     
     return parser.parse_args()
@@ -108,30 +138,45 @@ Examples:
 
 def validate_args(args: argparse.Namespace) -> None:
     """Validate command line arguments."""
-    if not args.input_dir:
-        print("Error: Input directory must be specified via --input-dir or INPUT_DIR environment variable")
-        sys.exit(1)
-    
-    input_path = Path(args.input_dir)
-    if not input_path.exists():
-        print(f"Error: Input directory does not exist: {args.input_dir}")
-        sys.exit(1)
-    
-    if not input_path.is_dir():
-        print(f"Error: Input path is not a directory: {args.input_dir}")
-        sys.exit(1)
-    
     # Create output directory if it doesn't exist
     output_path = Path(args.output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
-    if args.similarity_threshold < 0 or args.similarity_threshold > 64:
-        print("Error: Similarity threshold must be between 0 and 64")
-        sys.exit(1)
+    if args.mode == 'detect':
+        if not args.input_dir:
+            print("Error: Input directory must be specified via --input-dir for detect mode")
+            sys.exit(1)
+        
+        input_path = Path(args.input_dir)
+        if not input_path.exists():
+            print(f"Error: Input directory does not exist: {args.input_dir}")
+            sys.exit(1)
+        
+        if not input_path.is_dir():
+            print(f"Error: Input path is not a directory: {args.input_dir}")
+            sys.exit(1)
+        
+        if args.similarity_threshold < 0 or args.similarity_threshold > 64:
+            print("Error: Similarity threshold must be between 0 and 64")
+            sys.exit(1)
+        
+        if args.max_workers < 1:
+            print("Error: Max workers must be at least 1")
+            sys.exit(1)
     
-    if args.max_workers < 1:
-        print("Error: Max workers must be at least 1")
-        sys.exit(1)
+    elif args.mode == 'protect':
+        if not args.file_path:
+            print("Error: File path must be specified for protect mode")
+            sys.exit(1)
+        
+        file_path = Path(args.file_path)
+        if not file_path.exists():
+            print(f"Error: File does not exist: {args.file_path}")
+            sys.exit(1)
+        
+        if not file_path.is_file():
+            print(f"Error: Path is not a file: {args.file_path}")
+            sys.exit(1)
 
 
 def main() -> int:
@@ -143,11 +188,41 @@ def main() -> int:
     logger = logging.getLogger(__name__)
     logger.info("Starting OmniDupe - Duplicate Image Finder")
     
+    database = None
+    
     try:
-        # Initialize components
-        db_path = None if not args.persistent_db else Path(args.output_dir) / "omnidupe.db"
+        # Initialize database (always persistent now)
+        db_path = Path(args.output_dir) / "omnidupe.db"
         database = Database(db_path)
         
+        if args.mode == 'detect':
+            return detect_mode(args, database, logger)
+        elif args.mode == 'remove':
+            return remove_mode(args, database, logger)
+        elif args.mode == 'protect':
+            return protect_mode(args, database, logger)
+        else:
+            logger.error(f"Unknown mode: {args.mode}")
+            return 1
+        
+    except KeyboardInterrupt:
+        logger.info("Operation cancelled by user")
+        return 1
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        if args.verbose:
+            logger.exception("Full traceback:")
+        return 1
+    finally:
+        # Cleanup
+        if database:
+            database.close()
+
+
+def detect_mode(args: argparse.Namespace, database: Database, logger) -> int:
+    """Handle detect mode - scan for duplicates and store results in database."""
+    try:
+        # Initialize components
         scanner = ImageScanner(max_workers=args.max_workers)
         metadata_extractor = MetadataExtractor()
         duplicate_detector = DuplicateDetector(
@@ -155,7 +230,6 @@ def main() -> int:
             similarity_threshold=args.similarity_threshold
         )
         reporter = Reporter(output_dir=Path(args.output_dir))
-        file_manager = FileManager(dry_run=args.dry_run)
         
         # Step 1: Scan for images
         logger.info(f"Scanning directory: {args.input_dir}")
@@ -185,38 +259,92 @@ def main() -> int:
         
         logger.info(f"Found {len(duplicate_groups)} groups of duplicate/similar images")
         
-        # Step 4: Generate report
+        # Step 4: Convert to database format and mark for removal
+        group_dicts = [group.to_dict() for group in duplicate_groups]
+        marked_count = database.process_duplicate_groups_for_removal(group_dicts)
+        logger.info(f"Marked {marked_count} images for removal")
+        
+        # Step 5: Generate report
         logger.info("Generating report...")
         report_path = reporter.generate_report(duplicate_groups, args.report_format)
         logger.info(f"Report saved to: {report_path}")
         
-        # Step 5: Optionally remove duplicates
-        if args.remove_duplicates:
-            if not args.dry_run:
-                confirm = input("\nDo you want to proceed with removing duplicate files? (y/N): ")
-                if confirm.lower() != 'y':
-                    logger.info("Duplicate removal cancelled by user")
-                    return 0
-            
-            logger.info("Processing duplicate removal...")
-            removed_count = file_manager.remove_duplicates(duplicate_groups)
-            logger.info(f"Removed {removed_count} duplicate files")
-        
-        logger.info("OmniDupe completed successfully")
+        logger.info("Detect mode completed successfully")
+        logger.info("Use 'omnidupe remove' to delete the marked duplicate files")
         return 0
         
-    except KeyboardInterrupt:
-        logger.info("Operation cancelled by user")
-        return 1
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        if args.verbose:
-            logger.exception("Full traceback:")
-        return 1
-    finally:
-        # Cleanup
-        if 'database' in locals():
-            database.close()
+        logger.error(f"Error in detect mode: {e}")
+        raise
+
+
+def remove_mode(args: argparse.Namespace, database: Database, logger) -> int:
+    """Handle remove mode - remove images marked for deletion in database."""
+    try:
+        file_manager = FileManager(dry_run=args.dry_run)
+        
+        # Get images marked for removal
+        images_to_remove = database.get_images_for_removal()
+        
+        if not images_to_remove:
+            logger.info("No images marked for removal in database")
+            logger.info("Run 'omnidupe detect' first to identify duplicates")
+            return 0
+        
+        logger.info(f"Found {len(images_to_remove)} images marked for removal")
+        
+        # Confirm removal unless dry run
+        if not args.dry_run:
+            total_size = sum(img.get('file_size', 0) for img in images_to_remove)
+            size_mb = total_size / (1024 * 1024)
+            
+            print(f"\nFound {len(images_to_remove)} images marked for removal")
+            print(f"Total size to be freed: {size_mb:.1f} MB")
+            print("\nFiles to be removed:")
+            for img in images_to_remove[:5]:  # Show first 5
+                print(f"  - {img['file_path']} ({img.get('removal_reason', 'unknown')})")
+            if len(images_to_remove) > 5:
+                print(f"  ... and {len(images_to_remove) - 5} more files")
+            
+            confirm = input("\nDo you want to proceed with removing these files? (y/N): ")
+            if confirm.lower() != 'y':
+                logger.info("File removal cancelled by user")
+                return 0
+        
+        # Remove files
+        removed_count = file_manager.remove_files_from_database(database, args.dry_run)
+        
+        if args.dry_run:
+            logger.info(f"DRY RUN: Would remove {removed_count} files")
+        else:
+            logger.info(f"Successfully removed {removed_count} files")
+        
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Error in remove mode: {e}")
+        raise
+
+
+def protect_mode(args: argparse.Namespace, database: Database, logger) -> int:
+    """Handle protect mode - mark an image as protected from deletion."""
+    try:
+        file_path = str(Path(args.file_path).resolve())
+        
+        success = database.mark_image_protected(file_path)
+        
+        if success:
+            logger.info(f"Successfully protected image: {file_path}")
+            logger.info("This image will not be deleted in future removal operations")
+            return 0
+        else:
+            logger.error(f"Failed to protect image: {file_path}")
+            logger.error("Image may not exist in the database - run 'omnidupe detect' first")
+            return 1
+        
+    except Exception as e:
+        logger.error(f"Error in protect mode: {e}")
+        raise
 
 
 if __name__ == "__main__":

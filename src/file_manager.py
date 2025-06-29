@@ -257,3 +257,98 @@ class FileManager:
             info['error'] = str(e)
         
         return info
+
+    def remove_files_from_database(self, database, dry_run: bool = False) -> int:
+        """
+        Remove files that are marked for removal in the database.
+        
+        Args:
+            database: Database instance to query for files to remove
+            dry_run: If True, only simulate file operations without actual deletion
+            
+        Returns:
+            Number of files actually removed
+        """
+        images_to_remove = database.get_images_for_removal()
+        
+        if not images_to_remove:
+            self.logger.info("No images marked for removal in database")
+            return 0
+        
+        removed_count = 0
+        self.logger.info(f"Processing {len(images_to_remove)} images marked for removal")
+        
+        if dry_run:
+            self.logger.info("DRY RUN MODE - No files will actually be deleted")
+        
+        for image_info in images_to_remove:
+            file_path = Path(image_info['file_path'])
+            image_id = image_info['id']
+            reason = image_info.get('removal_reason', 'unknown')
+            
+            try:
+                if self._remove_file_and_update_db(file_path, image_id, database, dry_run):
+                    removed_count += 1
+                    self.logger.debug(f"Removed ({reason}): {file_path}")
+                else:
+                    self.logger.warning(f"Failed to remove: {file_path}")
+                    
+            except Exception as e:
+                self.logger.error(f"Error removing {file_path}: {e}")
+        
+        if dry_run:
+            self.logger.info(f"DRY RUN: Would have removed {removed_count} files")
+        else:
+            self.logger.info(f"Successfully removed {removed_count} files")
+        
+        return removed_count
+
+    def _remove_file_and_update_db(self, file_path: Path, image_id: int, database, dry_run: bool = False) -> bool:
+        """
+        Remove a file and update the database record.
+        
+        Args:
+            file_path: Path to the file to remove
+            image_id: Database ID of the image
+            database: Database instance to update
+            dry_run: If True, only simulate the operation
+            
+        Returns:
+            True if file was removed successfully (or would be in dry run mode)
+        """
+        try:
+            if not file_path.exists():
+                self.logger.warning(f"File does not exist: {file_path}")
+                # File already gone, remove the database record
+                if not dry_run:
+                    database.unmark_image_for_removal(image_id)
+                return True
+            
+            if not file_path.is_file():
+                self.logger.warning(f"Path is not a file: {file_path}")
+                return False
+            
+            # Check file permissions
+            if not os.access(file_path, os.W_OK):
+                self.logger.warning(f"No write permission for file: {file_path}")
+                return False
+            
+            if dry_run:
+                self.logger.info(f"DRY RUN: Would remove {file_path}")
+                return True
+            else:
+                # Perform actual deletion
+                file_path.unlink()
+                # Update database to unmark the removed file
+                database.unmark_image_for_removal(image_id)
+                return True
+                
+        except PermissionError:
+            self.logger.error(f"Permission denied when removing {file_path}")
+            return False
+        except OSError as e:
+            self.logger.error(f"OS error when removing {file_path}: {e}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Unexpected error when removing {file_path}: {e}")
+            return False

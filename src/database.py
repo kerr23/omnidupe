@@ -60,7 +60,10 @@ class Database:
                     wavelet_hash TEXT,
                     creation_time TEXT,
                     modification_time TEXT,
-                    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    marked_for_removal BOOLEAN DEFAULT FALSE,
+                    is_protected BOOLEAN DEFAULT FALSE,
+                    removal_reason TEXT
                 )
             """)
             
@@ -93,12 +96,25 @@ class Database:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_dimensions ON images (width, height)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_images_camera ON images (camera_make, camera_model)")
             
+            # Add columns for removal workflow if they don't exist
+            cursor.execute("""
+                ALTER TABLE images ADD COLUMN marked_for_removal BOOLEAN DEFAULT FALSE
+            """)
+            cursor.execute("""
+                ALTER TABLE images ADD COLUMN is_protected BOOLEAN DEFAULT FALSE
+            """)
+            cursor.execute("""
+                ALTER TABLE images ADD COLUMN removal_reason TEXT
+            """)
+            
             self.connection.commit()
             self.logger.debug("Database tables created successfully")
             
         except sqlite3.Error as e:
-            self.logger.error(f"Error creating database tables: {e}")
-            raise
+            # Ignore "duplicate column" errors when upgrading existing database
+            if "duplicate column" not in str(e).lower():
+                self.logger.error(f"Error creating database tables: {e}")
+                raise
     
     @contextmanager
     def get_cursor(self):
@@ -160,7 +176,7 @@ class Database:
                     metadata.modification_time.isoformat() if metadata.modification_time else None
                 ))
                 
-                return cursor.lastrowid
+                return cursor.lastrowid or 0
                 
         except sqlite3.Error as e:
             self.logger.error(f"Error storing metadata for {file_path}: {e}")
@@ -278,7 +294,7 @@ class Database:
                     VALUES (?, ?)
                 """, (group_type, similarity_score))
                 
-                return cursor.lastrowid
+                return cursor.lastrowid or 0
                 
         except sqlite3.Error as e:
             self.logger.error(f"Error creating duplicate group: {e}")
@@ -405,3 +421,128 @@ class Database:
         if self.connection:
             self.connection.close()
             self.logger.debug("Database connection closed")
+
+    def mark_image_for_removal(self, image_id: int, reason: str = "duplicate") -> None:
+        """
+        Mark an image for removal.
+        
+        Args:
+            image_id: ID of the image to mark for removal
+            reason: Reason for removal (e.g., 'duplicate', 'similar')
+        """
+        try:
+            with self.get_cursor() as cursor:
+                cursor.execute("""
+                    UPDATE images 
+                    SET marked_for_removal = TRUE, removal_reason = ?
+                    WHERE id = ? AND is_protected = FALSE
+                """, (reason, image_id))
+                
+                if cursor.rowcount == 0:
+                    self.logger.warning(f"Image {image_id} was not marked for removal (may be protected or not found)")
+                else:
+                    self.logger.debug(f"Marked image {image_id} for removal: {reason}")
+                    
+        except sqlite3.Error as e:
+            self.logger.error(f"Error marking image {image_id} for removal: {e}")
+            raise
+
+    def mark_image_protected(self, file_path: str) -> bool:
+        """
+        Mark an image as protected from removal.
+        
+        Args:
+            file_path: Path to the image file to protect
+            
+        Returns:
+            True if image was successfully marked as protected
+        """
+        try:
+            with self.get_cursor() as cursor:
+                cursor.execute("""
+                    UPDATE images 
+                    SET is_protected = TRUE, marked_for_removal = FALSE, removal_reason = NULL
+                    WHERE file_path = ?
+                """, (file_path,))
+                
+                if cursor.rowcount == 0:
+                    self.logger.warning(f"Image not found in database: {file_path}")
+                    return False
+                else:
+                    self.logger.info(f"Protected image from removal: {file_path}")
+                    return True
+                    
+        except sqlite3.Error as e:
+            self.logger.error(f"Error protecting image {file_path}: {e}")
+            raise
+
+    def get_images_for_removal(self) -> List[Dict[str, Any]]:
+        """
+        Get all images marked for removal that are not protected.
+        
+        Returns:
+            List of image dictionaries marked for removal
+        """
+        try:
+            with self.get_cursor() as cursor:
+                cursor.execute("""
+                    SELECT id, file_path, file_size, removal_reason
+                    FROM images 
+                    WHERE marked_for_removal = TRUE AND is_protected = FALSE
+                    ORDER BY file_path
+                """)
+                
+                return [dict(row) for row in cursor.fetchall()]
+                
+        except sqlite3.Error as e:
+            self.logger.error(f"Error getting images for removal: {e}")
+            return []
+
+    def unmark_image_for_removal(self, image_id: int) -> None:
+        """
+        Remove the removal mark from an image.
+        
+        Args:
+            image_id: ID of the image to unmark
+        """
+        try:
+            with self.get_cursor() as cursor:
+                cursor.execute("""
+                    UPDATE images 
+                    SET marked_for_removal = FALSE, removal_reason = NULL
+                    WHERE id = ?
+                """, (image_id,))
+                
+        except sqlite3.Error as e:
+            self.logger.error(f"Error unmarking image {image_id} for removal: {e}")
+            raise
+
+    def process_duplicate_groups_for_removal(self, duplicate_groups: List[Dict[str, Any]]) -> int:
+        """
+        Process duplicate groups and mark non-keeper images for removal.
+        
+        Args:
+            duplicate_groups: List of duplicate group dictionaries
+            
+        Returns:
+            Number of images marked for removal
+        """
+        marked_count = 0
+        
+        try:
+            for group in duplicate_groups:
+                group_type = group.get('type', 'unknown')
+                
+                # Mark all duplicates (non-keepers) for removal
+                for duplicate in group.get('duplicates', []):
+                    image_id = duplicate.get('id')
+                    if image_id:
+                        self.mark_image_for_removal(image_id, f"{group_type}_duplicate")
+                        marked_count += 1
+            
+            self.logger.info(f"Marked {marked_count} images for removal from {len(duplicate_groups)} duplicate groups")
+            return marked_count
+            
+        except Exception as e:
+            self.logger.error(f"Error processing duplicate groups for removal: {e}")
+            raise
