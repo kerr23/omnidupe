@@ -71,6 +71,7 @@ python main.py \
   --dry-run \
   --similarity-threshold 5 \
   --report-format json \
+  --persistent-db \
   --verbose
 ```
 
@@ -83,7 +84,8 @@ docker run --rm \
   -v /path/to/output:/data \
   omnidupe \
   --input-dir /images \
-  --output-dir /data
+  --output-dir /data \
+  --persistent-db
 ```
 
 Scan with duplicate removal:
@@ -95,7 +97,20 @@ docker run --rm \
   --input-dir /images \
   --output-dir /data \
   --remove-duplicates \
-  --dry-run
+  --dry-run \
+  --persistent-db
+```
+
+For large image collections (recommended):
+```bash
+docker run --rm \
+  -v /path/to/images:/images:ro \
+  -v /path/to/output:/data \
+  omnidupe \
+  --input-dir /images \
+  --output-dir /data \
+  --persistent-db \
+  --verbose
 ```
 
 Using environment variables:
@@ -119,7 +134,7 @@ docker run --rm \
 | `--dry-run` | Show what would be deleted without actually deleting | `False` |
 | `--similarity-threshold` | Hamming distance threshold for perceptual similarity | `10` |
 | `--report-format` | Output report format (`text`, `csv`, `json`) | `text` |
-| `--persistent-db` | Keep database file for future runs | `False` |
+| `--persistent-db` | Keep database file for future runs (⚡ **RECOMMENDED** for large collections) | `False` |
 | `--verbose`, `-v` | Enable verbose logging | `False` |
 | `--max-workers` | Maximum number of worker threads | `4` |
 
@@ -212,11 +227,32 @@ Group 2 (5 images, save 32.4 MB):
 
 ## Performance Considerations
 
+- **⚡ Persistent Database (HIGHLY RECOMMENDED)**: Use `--persistent-db` to cache metadata between runs:
+  - **First run**: Processes all images and saves metadata to `omnidupe.db`
+  - **Subsequent runs**: Only processes new/modified images (dramatically faster)
+  - **Ideal for**: Large image collections (>1000 images) or regular scanning
+  - **Example**: First scan takes 30 minutes, subsequent scans take 2-3 minutes
 - **Parallel processing**: Configurable worker threads for I/O operations
 - **Database indexing**: Optimized database queries with proper indexing
 - **Memory efficiency**: Processes images in streams to minimize memory usage
 - **Incremental processing**: Database persistence allows resuming interrupted operations
 - **Batch operations**: Groups database operations for better performance
+
+### Performance Tips for Large Collections
+
+1. **Always use `--persistent-db`** for collections with hundreds or thousands of images
+2. **First run setup**:
+   ```bash
+   # Initial scan - will take time but builds the database
+   python main.py --input-dir /large/photo/collection --output-dir ./results --persistent-db --verbose
+   ```
+3. **Subsequent runs** (much faster):
+   ```bash
+   # Only processes new/changed images
+   python main.py --input-dir /large/photo/collection --output-dir ./results --persistent-db
+   ```
+4. **Adjust workers** based on your system: `--max-workers 8` for powerful systems
+5. **Monitor progress** with `--verbose` flag to see processing status
 
 ## Troubleshooting
 
