@@ -338,7 +338,10 @@ class FileManager:
                 self.logger.warning(f"File does not exist: {file_path}")
                 # File already gone, remove the database record
                 if not dry_run:
-                    database.unmark_image_for_removal(image_id)
+                    try:
+                        database.unmark_image_for_removal(image_id)
+                    except Exception as db_error:
+                        self.logger.warning(f"Failed to update database for missing file {file_path}: {db_error}")
                 return True
             
             if not file_path.is_file():
@@ -368,7 +371,12 @@ class FileManager:
                 
                 if success:
                     # Update database to unmark the processed file
-                    database.unmark_image_for_removal(image_id)
+                    try:
+                        database.unmark_image_for_removal(image_id)
+                    except Exception as db_error:
+                        self.logger.warning(f"Failed to update database for {file_path}: {db_error}")
+                        # File operation was successful, so don't fail the entire operation
+                        # just because database update failed
                 
                 return success
                 

@@ -33,6 +33,10 @@ class Database:
         
         self.connection.row_factory = sqlite3.Row
         self._create_tables()
+        
+        # Check database writability and log warnings if issues found
+        if db_path and not self.check_database_writability():
+            self.logger.warning("Database may not be writable - some operations may fail")
     
     def _create_tables(self) -> None:
         """Create database tables for storing image metadata."""
@@ -514,7 +518,10 @@ class Database:
                 """, (image_id,))
                 
         except sqlite3.Error as e:
-            self.logger.error(f"Error unmarking image {image_id} for removal: {e}")
+            error_msg = f"Error unmarking image {image_id} for removal: {e}"
+            if "readonly" in str(e).lower():
+                error_msg += " (Database appears to be read-only - check file permissions)"
+            self.logger.error(error_msg)
             raise
 
     def process_duplicate_groups_for_removal(self, duplicate_groups: List[Dict[str, Any]]) -> int:
@@ -546,3 +553,42 @@ class Database:
         except Exception as e:
             self.logger.error(f"Error processing duplicate groups for removal: {e}")
             raise
+
+    def check_database_writability(self) -> bool:
+        """
+        Check if the database is writable and log diagnostic information.
+        
+        Returns:
+            True if database is writable, False otherwise
+        """
+        try:
+            # Test with a simple update operation that doesn't change anything
+            with self.get_cursor() as cursor:
+                # Try to update a non-existent record (should succeed even if no rows affected)
+                cursor.execute("UPDATE images SET file_path = file_path WHERE id = -1")
+                return True
+        except sqlite3.Error as e:
+            self.logger.error(f"Database write test failed: {e}")
+            
+            # Provide diagnostic information
+            if self.db_path:
+                import os
+                import stat
+                try:
+                    file_stat = os.stat(self.db_path)
+                    file_mode = stat.filemode(file_stat.st_mode)
+                    self.logger.error(f"Database file permissions: {file_mode}")
+                    
+                    # Check if file is writable
+                    if not os.access(self.db_path, os.W_OK):
+                        self.logger.error(f"Database file is not writable: {self.db_path}")
+                    
+                    # Check directory permissions
+                    db_dir = self.db_path.parent
+                    if not os.access(db_dir, os.W_OK):
+                        self.logger.error(f"Database directory is not writable: {db_dir}")
+                        
+                except OSError as os_error:
+                    self.logger.error(f"Error checking database file permissions: {os_error}")
+            
+            return False

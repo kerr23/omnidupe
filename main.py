@@ -353,6 +353,12 @@ def remove_mode(args: argparse.Namespace, database: Database, logger) -> int:
                     logger.info(f"File {action_ing} cancelled by user (Ctrl+C)")
                     return 0
         
+        # Check database writability unless it's a dry run
+        if not args.dry_run and not database.check_database_writability():
+            logger.error("Database is not writable - cannot update removal status")
+            logger.error("Check database file permissions or run in dry-run mode")
+            return 1
+
         # Process files (remove or move)
         processed_count = file_manager.remove_files_from_database(database, args.dry_run)
         
