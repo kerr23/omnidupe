@@ -371,3 +371,55 @@ class TestFileManager:
         # Check database was updated
         images_for_removal = memory_db.get_images_for_removal()
         assert len(images_for_removal) == 0  # Should be unmarked
+
+    def test_check_write_permission_existing_file(self, temp_dir):
+        """Test write permission check for existing file."""
+        fm = FileManager(dry_run=False)
+        
+        # Create a test file
+        test_file = temp_dir / "test.jpg"
+        test_file.write_text("test content")
+        
+        # Should have write permission
+        assert fm._check_write_permission(test_file) is True
+
+    def test_check_write_permission_nonexistent_file(self, temp_dir):
+        """Test write permission check for non-existent file."""
+        fm = FileManager(dry_run=False)
+        
+        # Test non-existent file (should check parent directory)
+        test_file = temp_dir / "nonexistent.jpg"
+        
+        # Should have write permission to parent directory
+        assert fm._check_write_permission(test_file) is True
+
+    def test_move_file_with_permission_check(self, temp_dir):
+        """Test move operation with permission checking."""
+        move_dir = temp_dir / "move_destination"
+        fm = FileManager(dry_run=False, move_to_dir=move_dir)
+        
+        # Create test file
+        test_file = temp_dir / "test_image.jpg"
+        test_file.write_text("test content")
+        
+        # Move should succeed with proper permissions
+        result = fm._move_file_to_directory(test_file, move_dir)
+        
+        assert result is True
+        assert not test_file.exists()  # Original file should be gone
+        moved_file = move_dir / "test_image.jpg"
+        assert moved_file.exists()  # File should exist in destination
+
+    def test_remove_file_with_permission_check(self, temp_dir):
+        """Test remove operation with permission checking."""
+        fm = FileManager(dry_run=False)
+        
+        # Create test file
+        test_file = temp_dir / "test.jpg"
+        test_file.write_text("test content")
+        
+        # Remove should succeed
+        result = fm._remove_file(test_file)
+        
+        assert result is True
+        assert not test_file.exists()  # File should be deleted

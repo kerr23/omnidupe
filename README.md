@@ -150,6 +150,53 @@ docker run --rm \
   protect --output-dir /data --file-path /images/important.jpg
 ```
 
+#### Volume Permissions
+
+When using Docker, ensure proper permissions on mounted volumes:
+
+```bash
+# Option 1: Run with current user (recommended)
+docker run --rm --user $(id -u):$(id -g) \
+  -v /path/to/images:/images:ro \
+  -v /path/to/output:/data \
+  omnidupe detect --input-dir /images --output-dir /data
+
+# Option 2: Use Z flag for SELinux systems
+docker run --rm \
+  -v /path/to/images:/images:ro,Z \
+  -v /path/to/output:/data:Z \
+  omnidupe detect --input-dir /images --output-dir /data
+
+# Option 3: Set directory permissions before mounting
+sudo chown -R $(id -u):$(id -g) /path/to/output
+docker run --rm \
+  -v /path/to/images:/images:ro \
+  -v /path/to/output:/data \
+  omnidupe detect --input-dir /images --output-dir /data
+```
+
+#### Common Permission Issues
+
+**Error: "No write permission for file"**
+- Use `--user $(id -u):$(id -g)` when running container
+- Ensure output directory is writable by container user
+- On SELinux systems, add `:Z` to volume mounts
+
+**Error: "Failed to move file"**
+- Input directory must be writable for move operations
+- Use read-only mount (`:ro`) if only detecting duplicates
+- For removal/move operations, mount input as writable
+
+**Move files instead of deleting:**
+```bash
+# Move duplicates to a separate directory for review
+docker run --rm --user $(id -u):$(id -g) \
+  -v /path/to/images:/images \
+  -v /path/to/output:/data \
+  -v /path/to/moved:/moved \
+  omnidupe remove --output-dir /data --move-to /moved
+```
+
 ## Command Line Options
 
 ### Detect Mode
@@ -167,6 +214,7 @@ docker run --rm \
 |--------|-------------|---------|
 | `--output-dir`, `-o` | Directory containing the database | `./output` |
 | `--dry-run` | Show what would be deleted without actually deleting | `False` |
+| `--move-to` | Move files to this directory instead of deleting them | None |
 | `--verbose`, `-v` | Enable verbose logging | `False` |
 
 ### Protect Mode

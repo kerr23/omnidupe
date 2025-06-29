@@ -96,7 +96,7 @@ class FileManager:
                 return False
             
             # Check file permissions
-            if not os.access(file_path, os.W_OK):
+            if not self._check_write_permission(file_path):
                 self.logger.warning(f"No write permission for file: {file_path}")
                 return False
             
@@ -118,6 +118,9 @@ class FileManager:
         except PermissionError:
             self.logger.error(f"Permission denied when processing {file_path}")
             return False
+        except FileNotFoundError:
+            self.logger.warning(f"File not found (already removed?): {file_path}")
+            return True  # Consider this a success
         except OSError as e:
             self.logger.error(f"OS error when processing {file_path}: {e}")
             return False
@@ -379,6 +382,28 @@ class FileManager:
             self.logger.error(f"Unexpected error when processing {file_path}: {e}")
             return False
     
+    def _check_write_permission(self, file_path: Path) -> bool:
+        """
+        Check if we have write permission for a file or its parent directory.
+        
+        Args:
+            file_path: Path to the file to check
+            
+        Returns:
+            True if we have write permission, False otherwise
+        """
+        try:
+            # Check if file exists and is writable
+            if file_path.exists():
+                return os.access(file_path, os.W_OK)
+            
+            # Check if parent directory is writable (for new files)
+            parent_dir = file_path.parent
+            return parent_dir.exists() and os.access(parent_dir, os.W_OK)
+            
+        except (OSError, PermissionError):
+            return False
+
     def _move_file_to_directory(self, file_path: Path, dest_dir: Path) -> bool:
         """
         Move a file to a destination directory, preserving directory structure.
@@ -391,8 +416,23 @@ class FileManager:
             True if file was moved successfully
         """
         try:
+            # Check source file permissions
+            if not self._check_write_permission(file_path):
+                self.logger.warning(f"No write permission for source file: {file_path}")
+                return False
+            
             # Create destination directory if it doesn't exist
             dest_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Check destination directory permissions
+            test_file = dest_dir / ".write_test"
+            try:
+                if not self.dry_run:
+                    test_file.touch()
+                    test_file.unlink()
+            except (OSError, PermissionError):
+                self.logger.warning(f"No write permission for destination directory: {dest_dir}")
+                return False
             
             # Generate destination path, handling name conflicts
             dest_file = dest_dir / file_path.name
@@ -405,11 +445,21 @@ class FileManager:
                 dest_file = dest_dir / new_name
                 counter += 1
             
+            if self.dry_run:
+                self.logger.info(f"DRY RUN: Would move {file_path} to {dest_file}")
+                return True
+            
             # Move the file
             shutil.move(str(file_path), str(dest_file))
             self.logger.info(f"Moved {file_path} to {dest_file}")
             return True
             
+        except PermissionError as e:
+            self.logger.error(f"Permission denied moving {file_path}: {e}")
+            return False
+        except OSError as e:
+            self.logger.error(f"OS error moving {file_path}: {e}")
+            return False
         except Exception as e:
-            self.logger.error(f"Error moving {file_path} to {dest_dir}: {e}")
+            self.logger.error(f"Unexpected error moving {file_path}: {e}")
             return False
