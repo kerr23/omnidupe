@@ -299,7 +299,8 @@ class TestRemoveMode:
         args = argparse.Namespace(
             output_dir=str(temp_dir),
             dry_run=False,
-            move_to=None
+            move_to=None,
+            yes=False
         )
         
         logger = Mock()
@@ -310,8 +311,9 @@ class TestRemoveMode:
         logger.info.assert_any_call("No images marked for removal in database")
 
     @patch('main.FileManager')
+    @patch('sys.stdin.isatty', return_value=True)
     @patch('builtins.input', return_value='y')
-    def test_remove_mode_with_confirmation(self, mock_input, mock_file_manager, temp_dir, memory_db):
+    def test_remove_mode_with_confirmation(self, mock_input, mock_isatty, mock_file_manager, temp_dir, memory_db):
         """Test remove mode with user confirmation."""
         from src.metadata_extractor import ImageMetadata
         
@@ -333,7 +335,8 @@ class TestRemoveMode:
         args = argparse.Namespace(
             output_dir=str(temp_dir),
             dry_run=False,
-            move_to=None
+            move_to=None,
+            yes=False
         )
         
         logger = Mock()
@@ -345,8 +348,9 @@ class TestRemoveMode:
         mock_fm_instance.remove_files_from_database.assert_called_once()
 
     @patch('main.FileManager')
+    @patch('sys.stdin.isatty', return_value=True)
     @patch('builtins.input', return_value='n')
-    def test_remove_mode_cancelled(self, mock_input, mock_file_manager, temp_dir, memory_db):
+    def test_remove_mode_cancelled(self, mock_input, mock_isatty, mock_file_manager, temp_dir, memory_db):
         """Test remove mode cancelled by user."""
         from src.metadata_extractor import ImageMetadata
         
@@ -367,7 +371,8 @@ class TestRemoveMode:
         args = argparse.Namespace(
             output_dir=str(temp_dir),
             dry_run=False,
-            move_to=None
+            move_to=None,
+            yes=False
         )
         
         logger = Mock()
@@ -401,7 +406,8 @@ class TestRemoveMode:
         args = argparse.Namespace(
             output_dir=str(temp_dir),
             dry_run=True,
-            move_to=None
+            move_to=None,
+            yes=False
         )
         
         logger = Mock()
