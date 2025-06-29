@@ -309,10 +309,88 @@ class TestFileManager:
         assert existing_file.exists()  # Original file should still exist
         assert existing_file.read_text() == "existing content"
         
-        # Check renamed file exists
-        renamed_file = move_dir / "test_image_1.jpg"
+        # Check renamed file exists (should have timestamp-based name)
+        moved_files = [f for f in move_dir.glob("test_image_*.jpg") if f != existing_file]
+        assert len(moved_files) == 1
+        
+        renamed_file = moved_files[0]
         assert renamed_file.exists()
         assert renamed_file.read_text() == "new content"
+        
+        # Verify naming pattern includes timestamp
+        import re
+        # Should match pattern like "test_image_1234567890123.jpg" or "test_image_1234567890123_1.jpg"
+        pattern = r"test_image_\d{13}(_\d+)?\.jpg"
+        assert re.match(pattern, renamed_file.name), f"Filename {renamed_file.name} doesn't match expected pattern"
+
+    def test_move_file_unique_naming_with_timestamp(self, temp_dir):
+        """Test unique file naming with timestamp when conflicts exist."""
+        move_dir = temp_dir / "move_destination"
+        move_dir.mkdir()
+        fm = FileManager(dry_run=False, move_to_dir=move_dir)
+        
+        # Create multiple existing files with similar names
+        existing_file = move_dir / "test_image.jpg"
+        existing_file.write_text("existing content")
+        
+        # Create test file to move
+        test_file = temp_dir / "test_image.jpg"
+        test_file.write_text("new content")
+        
+        # Move the file
+        result = fm._move_file_to_directory(test_file, move_dir)
+        
+        assert result is True
+        assert not test_file.exists()  # Original file should be gone
+        assert existing_file.exists()  # Original file should still exist
+        assert existing_file.read_text() == "existing content"
+        
+        # Find the moved file (should have timestamp in name)
+        moved_files = [f for f in move_dir.glob("test_image_*.jpg") if f != existing_file]
+        assert len(moved_files) == 1
+        
+        moved_file = moved_files[0]
+        assert moved_file.read_text() == "new content"
+        
+        # Verify naming pattern includes timestamp
+        import re
+        # Should match pattern like "test_image_1234567890123.jpg" or "test_image_1234567890123_1.jpg"
+        pattern = r"test_image_\d{13}(_\d+)?\.jpg"
+        assert re.match(pattern, moved_file.name), f"Filename {moved_file.name} doesn't match expected pattern"
+
+    def test_move_file_multiple_conflicts_handling(self, temp_dir):
+        """Test handling multiple naming conflicts with timestamp and counter."""
+        move_dir = temp_dir / "move_destination"
+        move_dir.mkdir()
+        fm = FileManager(dry_run=False, move_to_dir=move_dir)
+        
+        # Create original file
+        original_file = move_dir / "conflict.jpg"
+        original_file.write_text("original")
+        
+        # Simulate a timestamp-based conflict by creating a file that might conflict
+        import time
+        timestamp = int(time.time() * 1000)
+        timestamp_file = move_dir / f"conflict_{timestamp}.jpg"
+        timestamp_file.write_text("timestamp conflict")
+        
+        # Create test file to move
+        test_file = temp_dir / "conflict.jpg"
+        test_file.write_text("new content")
+        
+        # Move the file
+        result = fm._move_file_to_directory(test_file, move_dir)
+        
+        assert result is True
+        assert not test_file.exists()  # Original file should be gone
+        
+        # Should have created a file with timestamp and possibly counter
+        moved_files = [f for f in move_dir.glob("conflict_*.jpg") if f != timestamp_file]
+        assert len(moved_files) == 1
+        
+        moved_file = moved_files[0]
+        assert moved_file.read_text() == "new content"
+        assert moved_file.name != timestamp_file.name  # Should be different
 
     def test_remove_files_with_move_dry_run(self, temp_dir, memory_db):
         """Test dry run mode with move functionality."""

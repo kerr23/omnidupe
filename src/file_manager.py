@@ -444,14 +444,28 @@ class FileManager:
             
             # Generate destination path, handling name conflicts
             dest_file = dest_dir / file_path.name
-            counter = 1
             original_stem = file_path.stem
             original_suffix = file_path.suffix
             
-            while dest_file.exists():
-                new_name = f"{original_stem}_{counter}{original_suffix}"
+            # If file already exists, create a unique name using timestamp
+            if dest_file.exists():
+                import time
+                timestamp = int(time.time() * 1000)  # milliseconds for better uniqueness
+                counter = 1
+                
+                # Try with timestamp first
+                new_name = f"{original_stem}_{timestamp}{original_suffix}"
                 dest_file = dest_dir / new_name
-                counter += 1
+                
+                # If still conflicts (very unlikely but possible), add counter
+                while dest_file.exists():
+                    new_name = f"{original_stem}_{timestamp}_{counter}{original_suffix}"
+                    dest_file = dest_dir / new_name
+                    counter += 1
+                    
+                    # Safety check to prevent infinite loop
+                    if counter > 1000:
+                        raise Exception(f"Cannot generate unique filename for {file_path.name} after 1000 attempts")
             
             if self.dry_run:
                 self.logger.info(f"DRY RUN: Would move {file_path} to {dest_file}")
