@@ -4,8 +4,9 @@ File management module for safe duplicate removal.
 
 import logging
 import os
+import shutil
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from .duplicate_detector import DuplicateGroup
 
@@ -13,14 +14,16 @@ from .duplicate_detector import DuplicateGroup
 class FileManager:
     """Manages file operations for duplicate removal."""
     
-    def __init__(self, dry_run: bool = False):
+    def __init__(self, dry_run: bool = False, move_to_dir: Optional[Path] = None):
         """
         Initialize file manager.
         
         Args:
-            dry_run: If True, only simulate file operations without actual deletion
+            dry_run: If True, only simulate file operations without actual deletion/moving
+            move_to_dir: If provided, move files to this directory instead of deleting them
         """
         self.dry_run = dry_run
+        self.move_to_dir = move_to_dir
         self.logger = logging.getLogger(__name__)
     
     def remove_duplicates(self, duplicate_groups: List[DuplicateGroup]) -> int:
@@ -75,13 +78,13 @@ class FileManager:
     
     def _remove_file(self, file_path: Path) -> bool:
         """
-        Safely remove a single file.
+        Safely remove or move a single file.
         
         Args:
-            file_path: Path to the file to remove
+            file_path: Path to the file to remove or move
             
         Returns:
-            True if file was removed successfully (or would be in dry run mode)
+            True if file was removed/moved successfully (or would be in dry run mode)
         """
         try:
             if not file_path.exists():
@@ -98,21 +101,28 @@ class FileManager:
                 return False
             
             if self.dry_run:
-                self.logger.info(f"DRY RUN: Would remove {file_path}")
+                if self.move_to_dir:
+                    self.logger.info(f"DRY RUN: Would move {file_path} to {self.move_to_dir}")
+                else:
+                    self.logger.info(f"DRY RUN: Would remove {file_path}")
                 return True
             else:
-                # Perform actual deletion
-                file_path.unlink()
-                return True
+                if self.move_to_dir:
+                    # Move file to destination directory
+                    return self._move_file_to_directory(file_path, self.move_to_dir)
+                else:
+                    # Perform actual deletion
+                    file_path.unlink()
+                    return True
                 
         except PermissionError:
-            self.logger.error(f"Permission denied when removing {file_path}")
+            self.logger.error(f"Permission denied when processing {file_path}")
             return False
         except OSError as e:
-            self.logger.error(f"OS error when removing {file_path}: {e}")
+            self.logger.error(f"OS error when processing {file_path}: {e}")
             return False
         except Exception as e:
-            self.logger.error(f"Unexpected error when removing {file_path}: {e}")
+            self.logger.error(f"Unexpected error when processing {file_path}: {e}")
             return False
     
     def verify_keeper_files(self, duplicate_groups: List[DuplicateGroup]) -> Dict[str, Any]:
@@ -260,14 +270,14 @@ class FileManager:
 
     def remove_files_from_database(self, database, dry_run: bool = False) -> int:
         """
-        Remove files that are marked for removal in the database.
+        Remove or move files that are marked for removal in the database.
         
         Args:
             database: Database instance to query for files to remove
-            dry_run: If True, only simulate file operations without actual deletion
+            dry_run: If True, only simulate file operations without actual deletion/moving
             
         Returns:
-            Number of files actually removed
+            Number of files actually processed (removed or moved)
         """
         images_to_remove = database.get_images_for_removal()
         
@@ -275,11 +285,12 @@ class FileManager:
             self.logger.info("No images marked for removal in database")
             return 0
         
-        removed_count = 0
-        self.logger.info(f"Processing {len(images_to_remove)} images marked for removal")
+        processed_count = 0
+        action = "moving" if self.move_to_dir else "removing"
+        self.logger.info(f"Processing {len(images_to_remove)} images marked for {action}")
         
         if dry_run:
-            self.logger.info("DRY RUN MODE - No files will actually be deleted")
+            self.logger.info(f"DRY RUN MODE - No files will actually be {action.rstrip('ing')}ed")
         
         for image_info in images_to_remove:
             file_path = Path(image_info['file_path'])
@@ -288,33 +299,36 @@ class FileManager:
             
             try:
                 if self._remove_file_and_update_db(file_path, image_id, database, dry_run):
-                    removed_count += 1
-                    self.logger.debug(f"Removed ({reason}): {file_path}")
+                    processed_count += 1
+                    action_past = "moved" if self.move_to_dir else "removed"
+                    self.logger.debug(f"{action_past.capitalize()} ({reason}): {file_path}")
                 else:
-                    self.logger.warning(f"Failed to remove: {file_path}")
+                    self.logger.warning(f"Failed to {action.rstrip('ing')} {file_path}")
                     
             except Exception as e:
-                self.logger.error(f"Error removing {file_path}: {e}")
+                self.logger.error(f"Error {action.rstrip('ing')} {file_path}: {e}")
         
         if dry_run:
-            self.logger.info(f"DRY RUN: Would have removed {removed_count} files")
+            action_past = "moved" if self.move_to_dir else "removed"
+            self.logger.info(f"DRY RUN: Would have {action_past} {processed_count} files")
         else:
-            self.logger.info(f"Successfully removed {removed_count} files")
+            action_past = "moved" if self.move_to_dir else "removed"
+            self.logger.info(f"Successfully {action_past} {processed_count} files")
         
-        return removed_count
+        return processed_count
 
     def _remove_file_and_update_db(self, file_path: Path, image_id: int, database, dry_run: bool = False) -> bool:
         """
-        Remove a file and update the database record.
+        Remove or move a file and update the database record.
         
         Args:
-            file_path: Path to the file to remove
+            file_path: Path to the file to remove or move
             image_id: Database ID of the image
             database: Database instance to update
             dry_run: If True, only simulate the operation
             
         Returns:
-            True if file was removed successfully (or would be in dry run mode)
+            True if file was removed/moved successfully (or would be in dry run mode)
         """
         try:
             if not file_path.exists():
@@ -334,21 +348,68 @@ class FileManager:
                 return False
             
             if dry_run:
-                self.logger.info(f"DRY RUN: Would remove {file_path}")
+                if self.move_to_dir:
+                    self.logger.info(f"DRY RUN: Would move {file_path} to {self.move_to_dir}")
+                else:
+                    self.logger.info(f"DRY RUN: Would remove {file_path}")
                 return True
             else:
-                # Perform actual deletion
-                file_path.unlink()
-                # Update database to unmark the removed file
-                database.unmark_image_for_removal(image_id)
-                return True
+                success = False
+                if self.move_to_dir:
+                    # Move file to destination directory
+                    success = self._move_file_to_directory(file_path, self.move_to_dir)
+                else:
+                    # Perform actual deletion
+                    file_path.unlink()
+                    success = True
+                
+                if success:
+                    # Update database to unmark the processed file
+                    database.unmark_image_for_removal(image_id)
+                
+                return success
                 
         except PermissionError:
-            self.logger.error(f"Permission denied when removing {file_path}")
+            self.logger.error(f"Permission denied when processing {file_path}")
             return False
         except OSError as e:
-            self.logger.error(f"OS error when removing {file_path}: {e}")
+            self.logger.error(f"OS error when processing {file_path}: {e}")
             return False
         except Exception as e:
-            self.logger.error(f"Unexpected error when removing {file_path}: {e}")
+            self.logger.error(f"Unexpected error when processing {file_path}: {e}")
+            return False
+    
+    def _move_file_to_directory(self, file_path: Path, dest_dir: Path) -> bool:
+        """
+        Move a file to a destination directory, preserving directory structure.
+        
+        Args:
+            file_path: Source file path
+            dest_dir: Destination directory
+            
+        Returns:
+            True if file was moved successfully
+        """
+        try:
+            # Create destination directory if it doesn't exist
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Generate destination path, handling name conflicts
+            dest_file = dest_dir / file_path.name
+            counter = 1
+            original_stem = file_path.stem
+            original_suffix = file_path.suffix
+            
+            while dest_file.exists():
+                new_name = f"{original_stem}_{counter}{original_suffix}"
+                dest_file = dest_dir / new_name
+                counter += 1
+            
+            # Move the file
+            shutil.move(str(file_path), str(dest_file))
+            self.logger.info(f"Moved {file_path} to {dest_file}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error moving {file_path} to {dest_dir}: {e}")
             return False

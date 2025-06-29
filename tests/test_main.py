@@ -298,7 +298,8 @@ class TestRemoveMode:
         
         args = argparse.Namespace(
             output_dir=str(temp_dir),
-            dry_run=False
+            dry_run=False,
+            move_to=None
         )
         
         logger = Mock()
@@ -331,7 +332,8 @@ class TestRemoveMode:
         
         args = argparse.Namespace(
             output_dir=str(temp_dir),
-            dry_run=False
+            dry_run=False,
+            move_to=None
         )
         
         logger = Mock()
@@ -364,7 +366,8 @@ class TestRemoveMode:
         
         args = argparse.Namespace(
             output_dir=str(temp_dir),
-            dry_run=False
+            dry_run=False,
+            move_to=None
         )
         
         logger = Mock()
@@ -397,7 +400,8 @@ class TestRemoveMode:
         
         args = argparse.Namespace(
             output_dir=str(temp_dir),
-            dry_run=True
+            dry_run=True,
+            move_to=None
         )
         
         logger = Mock()

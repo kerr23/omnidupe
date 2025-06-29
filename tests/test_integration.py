@@ -263,6 +263,50 @@ class TestIntegration:
         # Should have more detailed output in verbose mode
         assert "DEBUG" in result.stdout or "INFO" in result.stdout
 
+    @pytest.mark.integration
+    def test_remove_with_move_functionality(self, test_images_dir, temp_dir):
+        """Test complete workflow with move functionality instead of deletion."""
+        output_dir = temp_dir / "output"
+        output_dir.mkdir()
+        move_dir = temp_dir / "moved_images"
+        
+        # Step 1: Run detect mode
+        detect_cmd = [
+            sys.executable, "main.py", "detect",
+            "--input-dir", str(test_images_dir),
+            "--output-dir", str(output_dir),
+            "--similarity-threshold", "10",
+            "--max-workers", "2"
+        ]
+        
+        result = subprocess.run(detect_cmd, capture_output=True, text=True, cwd=Path.cwd())
+        assert result.returncode == 0
+        
+        # Check database was created
+        db_path = output_dir / "omnidupe.db"
+        assert db_path.exists()
+        
+        # Step 2: Test move with dry run
+        move_dry_cmd = [
+            sys.executable, "main.py", "remove",
+            "--output-dir", str(output_dir),
+            "--move-to", str(move_dir),
+            "--dry-run"
+        ]
+        
+        result = subprocess.run(move_dry_cmd, capture_output=True, text=True, cwd=Path.cwd())
+        assert result.returncode == 0
+        
+        # In dry run, move directory shouldn't be created
+        assert not move_dir.exists()
+        
+        # Check that move functionality would be used (check logs)
+        if "DRY RUN: Would move" in result.stdout or "Would move" in result.stdout:
+            # Files would be moved in actual run - this is the expected successful case
+            assert "Processing" in result.stdout and "marked for moving" in result.stdout
+        else:
+            # No files to move (which is also valid)
+            assert "No images marked for removal" in result.stdout
 
 class TestEdgeCases:
     """Test edge cases and error conditions."""

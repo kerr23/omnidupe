@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 from pathlib import Path
+from pathlib import Path
 from typing import Optional
 
 from src.image_scanner import ImageScanner
@@ -95,7 +96,7 @@ Examples:
     )
     
     # Remove mode  
-    remove_parser = subparsers.add_parser('remove', help='Remove images marked for deletion')
+    remove_parser = subparsers.add_parser('remove', help='Remove or move images marked for deletion')
     remove_parser.add_argument(
         '--output-dir', '-o',
         type=str,
@@ -106,6 +107,11 @@ Examples:
         '--dry-run',
         action='store_true',
         help='Show what would be deleted without actually deleting files'
+    )
+    remove_parser.add_argument(
+        '--move-to',
+        type=str,
+        help='Move files to this directory instead of deleting them'
     )
     remove_parser.add_argument(
         '--verbose', '-v',
@@ -281,7 +287,17 @@ def detect_mode(args: argparse.Namespace, database: Database, logger) -> int:
 def remove_mode(args: argparse.Namespace, database: Database, logger) -> int:
     """Handle remove mode - remove images marked for deletion in database."""
     try:
-        file_manager = FileManager(dry_run=args.dry_run)
+        # Validate move directory if specified
+        move_to_dir = None
+        if args.move_to:
+            move_to_dir = Path(args.move_to)
+            if not args.dry_run:
+                move_to_dir.mkdir(parents=True, exist_ok=True)
+                if not move_to_dir.is_dir():
+                    logger.error(f"Move directory is not valid: {move_to_dir}")
+                    return 1
+        
+        file_manager = FileManager(dry_run=args.dry_run, move_to_dir=move_to_dir)
         
         # Get images marked for removal
         images_to_remove = database.get_images_for_removal()
@@ -293,31 +309,39 @@ def remove_mode(args: argparse.Namespace, database: Database, logger) -> int:
         
         logger.info(f"Found {len(images_to_remove)} images marked for removal")
         
-        # Confirm removal unless dry run
+        # Confirm operation unless dry run
         if not args.dry_run:
             total_size = sum(img.get('file_size', 0) for img in images_to_remove)
             size_mb = total_size / (1024 * 1024)
             
-            print(f"\nFound {len(images_to_remove)} images marked for removal")
-            print(f"Total size to be freed: {size_mb:.1f} MB")
-            print("\nFiles to be removed:")
+            action = "moved" if args.move_to else "removed"
+            action_ing = "moving" if args.move_to else "removing"
+            
+            print(f"\nFound {len(images_to_remove)} images marked for {action_ing}")
+            if args.move_to:
+                print(f"Files will be moved to: {args.move_to}")
+            print(f"Total size to be processed: {size_mb:.1f} MB")
+            print(f"\nFiles to be {action}:")
             for img in images_to_remove[:5]:  # Show first 5
                 print(f"  - {img['file_path']} ({img.get('removal_reason', 'unknown')})")
             if len(images_to_remove) > 5:
                 print(f"  ... and {len(images_to_remove) - 5} more files")
             
-            confirm = input("\nDo you want to proceed with removing these files? (y/N): ")
+            verb = "move" if args.move_to else "remove"
+            confirm = input(f"\nDo you want to proceed with {action_ing} these files? (y/N): ")
             if confirm.lower() != 'y':
-                logger.info("File removal cancelled by user")
+                logger.info(f"File {action_ing} cancelled by user")
                 return 0
         
-        # Remove files
-        removed_count = file_manager.remove_files_from_database(database, args.dry_run)
+        # Process files (remove or move)
+        processed_count = file_manager.remove_files_from_database(database, args.dry_run)
         
         if args.dry_run:
-            logger.info(f"DRY RUN: Would remove {removed_count} files")
+            action = "moved" if args.move_to else "removed"
+            logger.info(f"DRY RUN: Would {action.rstrip('d')} {processed_count} files")
         else:
-            logger.info(f"Successfully removed {removed_count} files")
+            action = "moved" if args.move_to else "removed"
+            logger.info(f"Successfully {action} {processed_count} files")
         
         return 0
         

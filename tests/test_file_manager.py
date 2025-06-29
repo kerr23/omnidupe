@@ -23,6 +23,13 @@ class TestFileManager:
         fm = FileManager(dry_run=False)
         assert fm.dry_run is False
 
+    def test_file_manager_init_with_move_dir(self, temp_dir):
+        """Test FileManager initialization with move directory."""
+        move_dir = temp_dir / "move_to"
+        fm = FileManager(dry_run=False, move_to_dir=move_dir)
+        assert fm.dry_run is False
+        assert fm.move_to_dir == move_dir
+
     def test_remove_files_from_database_no_files(self, file_manager, memory_db):
         """Test removing files when no files are marked for removal."""
         removed_count = file_manager.remove_files_from_database(memory_db, dry_run=True)
@@ -261,3 +268,106 @@ class TestFileManager:
         success = fm._remove_file(test_dir)
         
         assert success is False
+
+    def test_move_file_to_directory_success(self, temp_dir):
+        """Test moving a file to a directory successfully."""
+        move_dir = temp_dir / "move_destination"
+        fm = FileManager(dry_run=False, move_to_dir=move_dir)
+        
+        # Create test file
+        test_file = temp_dir / "test_image.jpg"
+        test_file.write_text("test content")
+        
+        # Move the file
+        result = fm._move_file_to_directory(test_file, move_dir)
+        
+        assert result is True
+        assert not test_file.exists()  # Original file should be gone
+        moved_file = move_dir / "test_image.jpg"
+        assert moved_file.exists()  # File should exist in destination
+        assert moved_file.read_text() == "test content"
+
+    def test_move_file_to_directory_name_conflict(self, temp_dir):
+        """Test moving a file when name conflict exists."""
+        move_dir = temp_dir / "move_destination"
+        move_dir.mkdir()
+        fm = FileManager(dry_run=False, move_to_dir=move_dir)
+        
+        # Create existing file in destination
+        existing_file = move_dir / "test_image.jpg"
+        existing_file.write_text("existing content")
+        
+        # Create test file to move
+        test_file = temp_dir / "test_image.jpg"
+        test_file.write_text("new content")
+        
+        # Move the file
+        result = fm._move_file_to_directory(test_file, move_dir)
+        
+        assert result is True
+        assert not test_file.exists()  # Original file should be gone
+        assert existing_file.exists()  # Original file should still exist
+        assert existing_file.read_text() == "existing content"
+        
+        # Check renamed file exists
+        renamed_file = move_dir / "test_image_1.jpg"
+        assert renamed_file.exists()
+        assert renamed_file.read_text() == "new content"
+
+    def test_remove_files_with_move_dry_run(self, temp_dir, memory_db):
+        """Test dry run mode with move functionality."""
+        from src.metadata_extractor import ImageMetadata
+        
+        move_dir = temp_dir / "move_destination"
+        fm = FileManager(dry_run=True, move_to_dir=move_dir)
+        
+        # Create test file and metadata
+        test_file = temp_dir / "move_test.jpg"
+        test_file.touch()
+        
+        metadata = ImageMetadata(test_file)
+        metadata.file_size = 1000
+        metadata.file_hash = "hash1"
+        
+        # Store in database and mark for removal
+        memory_db.store_image_metadata(test_file, metadata)
+        memory_db.mark_image_for_removal(1, "duplicate")
+        
+        # Test dry run
+        processed_count = fm.remove_files_from_database(memory_db, dry_run=True)
+        
+        assert processed_count == 1
+        assert test_file.exists()  # File should still exist in dry run
+        assert not move_dir.exists()  # Move directory shouldn't be created
+
+    def test_remove_files_with_move_actual(self, temp_dir, memory_db):
+        """Test actual move operation."""
+        from src.metadata_extractor import ImageMetadata
+        
+        move_dir = temp_dir / "move_destination"
+        fm = FileManager(dry_run=False, move_to_dir=move_dir)
+        
+        # Create test file and metadata
+        test_file = temp_dir / "move_test.jpg"
+        test_file.write_text("test image content")
+        
+        metadata = ImageMetadata(test_file)
+        metadata.file_size = 1000
+        metadata.file_hash = "hash1"
+        
+        # Store in database and mark for removal
+        memory_db.store_image_metadata(test_file, metadata)
+        memory_db.mark_image_for_removal(1, "duplicate")
+        
+        # Test actual move
+        processed_count = fm.remove_files_from_database(memory_db, dry_run=False)
+        
+        assert processed_count == 1
+        assert not test_file.exists()  # Original file should be gone
+        moved_file = move_dir / "move_test.jpg"
+        assert moved_file.exists()  # File should exist in destination
+        assert moved_file.read_text() == "test image content"
+        
+        # Check database was updated
+        images_for_removal = memory_db.get_images_for_removal()
+        assert len(images_for_removal) == 0  # Should be unmarked
