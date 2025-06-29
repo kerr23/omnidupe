@@ -114,6 +114,11 @@ Examples:
         help='Move files to this directory instead of deleting them'
     )
     remove_parser.add_argument(
+        '--yes', '-y',
+        action='store_true',
+        help='Skip confirmation prompt and proceed automatically'
+    )
+    remove_parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Enable verbose logging'
@@ -327,11 +332,26 @@ def remove_mode(args: argparse.Namespace, database: Database, logger) -> int:
             if len(images_to_remove) > 5:
                 print(f"  ... and {len(images_to_remove) - 5} more files")
             
-            verb = "move" if args.move_to else "remove"
-            confirm = input(f"\nDo you want to proceed with {action_ing} these files? (y/N): ")
-            if confirm.lower() != 'y':
-                logger.info(f"File {action_ing} cancelled by user")
-                return 0
+            # Skip confirmation if --yes flag is used or if not in interactive environment
+            if args.yes:
+                logger.info(f"Auto-confirming {action_ing} due to --yes flag")
+            elif not sys.stdin.isatty():
+                logger.error("Cannot prompt for confirmation in non-interactive environment")
+                logger.error("Use --yes flag to proceed automatically or run with -it flags for Docker")
+                return 1
+            else:
+                try:
+                    verb = "move" if args.move_to else "remove"
+                    confirm = input(f"\nDo you want to proceed with {action_ing} these files? (y/N): ")
+                    if confirm.lower() != 'y':
+                        logger.info(f"File {action_ing} cancelled by user")
+                        return 0
+                except EOFError:
+                    logger.error("EOF when reading confirmation - use --yes flag for non-interactive use")
+                    return 1
+                except KeyboardInterrupt:
+                    logger.info(f"File {action_ing} cancelled by user (Ctrl+C)")
+                    return 0
         
         # Process files (remove or move)
         processed_count = file_manager.remove_files_from_database(database, args.dry_run)

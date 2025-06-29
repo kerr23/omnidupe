@@ -47,7 +47,8 @@ class TestIntegration:
         remove_dry_cmd = [
             sys.executable, "main.py", "remove",
             "--output-dir", str(output_dir),
-            "--dry-run"
+            "--dry-run",
+            "--yes"
         ]
         
         result = subprocess.run(remove_dry_cmd, capture_output=True, text=True, cwd=Path.cwd())
@@ -291,7 +292,8 @@ class TestIntegration:
             sys.executable, "main.py", "remove",
             "--output-dir", str(output_dir),
             "--move-to", str(move_dir),
-            "--dry-run"
+            "--dry-run",
+            "--yes"
         ]
         
         result = subprocess.run(move_dry_cmd, capture_output=True, text=True, cwd=Path.cwd())
@@ -322,7 +324,8 @@ class TestEdgeCases:
         
         cmd = [
             sys.executable, "main.py", "remove",
-            "--output-dir", str(output_dir)
+            "--output-dir", str(output_dir),
+            "--yes"
         ]
         
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=Path.cwd())
